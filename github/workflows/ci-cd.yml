@@ -18,24 +18,43 @@ jobs:
           POSTGRES_DB: supercast
         ports:
           - 5432:5432
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Install dependencies
+
+      - name: Install backend dependencies
         run: |
           cd backend
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
+
       - name: Run backend tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/supercast
         run: |
           cd backend
           pytest
-      - name: Build & push Docker image
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push backend Docker image
         uses: docker/build-push-action@v3
         with:
-          context: backend
+          context: ./backend
           push: true
           tags: ${{ secrets.DOCKER_REGISTRY }}/superstar-broadcast-hub-backend:${{ github.sha }}
 
@@ -43,23 +62,29 @@ jobs:
     needs: backend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Set up Node
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-      - name: Install dependencies
+
+      - name: Install frontend dependencies
         run: |
           cd frontend
           npm ci
+
       - name: Run frontend tests
         run: |
           cd frontend
           npm test -- --watchAll=false
-      - name: Build React app
+
+      - name: Build frontend
         run: |
           cd frontend
           npm run build
+
       - name: Deploy to Vercel
         uses: amondnet/vercel-action@v20
         with:
@@ -67,3 +92,4 @@ jobs:
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           working-directory: ./frontend
+          prod: true
